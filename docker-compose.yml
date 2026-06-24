@@ -1,0 +1,113 @@
+# docker-compose.yml
+version: "3.9"
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: anomaly-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: anomaly_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - anomaly_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - anomaly-network
+
+  # ── Redis ──────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: anomaly-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - anomaly_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - anomaly-network
+
+  # ── FastAPI ────────────────────────────────────────────────────────────
+  api:
+    build: .
+    container_name: anomaly-api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/anomaly_db
+      DATABASE_SYNC_URL: postgresql+psycopg2://postgres:postgres@postgres:5432/anomaly_db
+      REDIS_URL: redis://redis:6379/0
+      DEBUG: "True"
+      ENVIRONMENT: development
+      SECRET_KEY: dev-secret-key
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    networks:
+      - anomaly-network
+
+  # ── Celery Worker ──────────────────────────────────────────────────────
+  celery:
+    build: .
+    container_name: anomaly-celery
+    command: celery -A app.workers.celery_app worker --loglevel=info --pool=solo
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/anomaly_db
+      DATABASE_SYNC_URL: postgresql+psycopg2://postgres:postgres@postgres:5432/anomaly_db
+      REDIS_URL: redis://redis:6379/0
+      DEBUG: "True"
+      ENVIRONMENT: development
+      SECRET_KEY: dev-secret-key
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    networks:
+      - anomaly-network
+
+  # ── Alembic migrations (runs once then exits) ──────────────────────────
+  migrate:
+    build: .
+    container_name: anomaly-migrate
+    command: alembic upgrade head
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/anomaly_db
+      DATABASE_SYNC_URL: postgresql+psycopg2://postgres:postgres@postgres:5432/anomaly_db
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    networks:
+      - anomaly-network
+
+# ── Volumes ────────────────────────────────────────────────────────────────
+volumes:
+  anomaly_pgdata:
+  anomaly_redis_data:
+
+# ── Network ────────────────────────────────────────────────────────────────
+networks:
+  anomaly-network:
+    driver: bridge

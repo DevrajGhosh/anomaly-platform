@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+.git/
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+test_websocket.html
+simulate_signals.py

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test — Anomaly Platform</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #00ff00; }
+        #messages { height: 400px; overflow-y: auto; border: 1px solid #333; padding: 10px; margin: 10px 0; }
+        button { background: #333; color: #00ff00; border: 1px solid #00ff00; padding: 8px 16px; cursor: pointer; margin: 4px; }
+        button:hover { background: #00ff00; color: #1a1a1a; }
+        input { background: #333; color: #00ff00; border: 1px solid #555; padding: 8px; width: 300px; }
+        .msg-signal { color: #00ff00; }
+        .msg-anomaly { color: #ff4444; }
+        .msg-system { color: #ffff00; }
+    </style>
+</head>
+<body>
+    <h2>🔴 WebSocket Live Test</h2>
+
+    <div>
+        <button onclick="connectLive()">Connect: All Signals</button>
+        <button onclick="connectAnomalies()">Connect: Anomalies</button>
+        <button onclick="disconnect()">Disconnect</button>
+        <button onclick="clearMessages()">Clear</button>
+    </div>
+
+    <div>
+        <input id="sensorId" placeholder="Sensor UUID for per-sensor stream" />
+        <button onclick="connectSensor()">Connect: This Sensor</button>
+    </div>
+
+    <div id="status" style="margin: 10px 0; color: #ffff00;">Status: Disconnected</div>
+    <div id="messages"></div>
+
+    <script>
+        let ws = null;
+
+        function log(msg, type = 'signal') {
+            const div = document.getElementById('messages');
+            const time = new Date().toISOString().substr(11, 12);
+            div.innerHTML += `<div class="msg-${type}">[${time}] ${JSON.stringify(msg)}</div>`;
+            div.scrollTop = div.scrollHeight;
+        }
+
+        function setStatus(msg) {
+            document.getElementById('status').textContent = 'Status: ' + msg;
+        }
+
+        function connect(url) {
+            if (ws) ws.close();
+            ws = new WebSocket(url);
+            ws.onopen = () => setStatus('Connected to ' + url);
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                const type = data.type === 'connected' ? 'system' :
+                             data.severity ? 'anomaly' : 'signal';
+                log(data, type);
+            };
+            ws.onclose = () => setStatus('Disconnected');
+            ws.onerror = (e) => setStatus('Error: ' + e);
+        }
+
+        function connectLive() { connect('ws://localhost:8000/api/v1/ws/signals/live'); }
+        function connectAnomalies() { connect('ws://localhost:8000/api/v1/ws/anomalies/live'); }
+        function connectSensor() {
+            const id = document.getElementById('sensorId').value.trim();
+            if (!id) { alert('Enter a sensor UUID'); return; }
+            connect(`ws://localhost:8000/api/v1/ws/signals/sensor/${id}`);
+        }
+        function disconnect() { if (ws) ws.close(); }
+        function clearMessages() { document.getElementById('messages').innerHTML = ''; }
+    </script>
+</body>
+</html>
