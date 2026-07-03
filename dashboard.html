@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SIG-MONITOR | Signal Anomaly Detection Platform</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script>
+tailwind.config = {
+    darkMode: "class",
+    theme: {
+        extend: {
+            colors: {
+                "surface": "#0b1326","surface-container": "#171f33",
+                "surface-container-low": "#131b2e","surface-container-high": "#222a3d",
+                "surface-container-highest": "#2d3449","outline-variant": "#424754",
+                "outline": "#8c909f","primary": "#adc6ff","secondary": "#4ae176",
+                "error": "#ffb4ab","on-surface": "#dae2fd","on-surface-variant": "#c2c6d6",
+                "on-primary": "#002e6a","on-error": "#690005","secondary-container": "#00b954",
+                "on-secondary-container": "#004119",
+            }
+        }
+    }
+}
+</script>
+<style>
+body { background-color: #0f172a; color: #dae2fd; -webkit-font-smoothing: antialiased; font-family: Inter, sans-serif; }
+.material-symbols-outlined { font-variation-settings: 'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24; vertical-align: middle; }
+.critical-pulse { animation: pulse-red 2s cubic-bezier(0.4,0,0.6,1) infinite; }
+@keyframes pulse-red { 0%,100%{background-color:rgba(220,38,38,0.1);border-color:#ef4444}50%{background-color:rgba(220,38,38,0.3);border-color:#f87171} }
+.live-dot { animation: blink 1.5s infinite; }
+@keyframes blink { 0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.9)} }
+.slide-in { animation: slideIn 0.3s ease-out; }
+@keyframes slideIn { from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)} }
+.custom-scrollbar::-webkit-scrollbar{width:6px}
+.custom-scrollbar::-webkit-scrollbar-track{background:#1e293b}
+.custom-scrollbar::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}
+.glass-card{background:rgba(30,41,59,0.7);backdrop-filter:blur(8px);border:1px solid #334155}
+.tab-content{display:none}.tab-content.active{display:block}
+.nav-item{color:#c2c6d6;padding:10px 12px;display:flex;align-items:center;gap:12px;border-radius:8px;cursor:pointer;transition:all 0.15s;font-size:12px;font-weight:600;}
+.nav-item:hover{background:#222a3d}
+.nav-item.active{background:#00b954;color:#004119}
+</style>
+</head>
+<body class="overflow-hidden">
+
+<!-- TOP NAVBAR -->
+<header class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-6 h-16 bg-surface/80 backdrop-blur-md border-b border-outline-variant">
+    <div class="flex items-center gap-5">
+        <h1 class="text-xl font-bold text-primary tracking-tight">SIG-MONITOR</h1>
+        <div class="flex items-center gap-2 bg-surface-container-low px-3 py-1 rounded-full border border-outline-variant">
+            <span class="w-2 h-2 rounded-full bg-secondary live-dot"></span>
+            <span class="text-xs font-semibold text-secondary uppercase tracking-widest">Live</span>
+        </div>
+        <span id="ws-status" class="text-xs px-2 py-1 rounded-full bg-gray-700 text-gray-300">Connecting...</span>
+    </div>
+    <div class="flex items-center gap-4">
+        <span class="text-xs text-on-surface-variant font-mono" id="last-updated">--</span>
+        <span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary">notifications</span>
+        <span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary">settings</span>
+    </div>
+</header>
+
+<!-- SIDEBAR -->
+<aside class="fixed left-0 top-16 h-[calc(100vh-64px)] w-56 bg-surface-container flex flex-col py-4 border-r border-outline-variant z-40">
+    <div class="px-4 mb-5">
+        <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-lg bg-surface-container-highest flex items-center justify-center">
+                <span class="material-symbols-outlined text-secondary" style="font-variation-settings:'FILL' 1;">terminal</span>
+            </div>
+            <div>
+                <p class="text-xs font-bold text-on-surface">Core Engine</p>
+                <p class="text-[10px] text-secondary opacity-80">Active</p>
+            </div>
+        </div>
+    </div>
+    <nav class="flex-1 space-y-1 px-2" id="sidebar-nav">
+        <div class="nav-item active" onclick="switchTab('live')" id="nav-live">
+            <span class="material-symbols-outlined text-[18px]">sensors</span>
+            <span>Live Stream</span>
+        </div>
+        <div class="nav-item" onclick="switchTab('anomalylog')" id="nav-anomalylog">
+            <span class="material-symbols-outlined text-[18px]">warning</span>
+            <span>Anomaly Log</span>
+        </div>
+        <div class="nav-item" onclick="switchTab('sensorhealth')" id="nav-sensorhealth">
+            <span class="material-symbols-outlined text-[18px]">heart_check</span>
+            <span>Sensor Health</span>
+        </div>
+        <div class="nav-item" onclick="switchTab('modelconfig')" id="nav-modelconfig">
+            <span class="material-symbols-outlined text-[18px]">settings_input_component</span>
+            <span>Model Config</span>
+        </div>
+    </nav>
+    <div class="px-4 mt-auto pt-4 border-t border-outline-variant">
+        <div class="text-xs text-on-surface-variant space-y-1.5">
+            <div class="flex justify-between"><span>Database</span><span id="db-health" class="text-secondary font-bold">--</span></div>
+            <div class="flex justify-between"><span>Redis</span><span id="redis-health" class="text-secondary font-bold">--</span></div>
+            <div class="flex justify-between"><span>WS Clients</span><span id="ws-clients" class="text-secondary font-bold">--</span></div>
+        </div>
+    </div>
+</aside>
+
+<!-- MAIN CONTENT -->
+<main class="ml-56 pt-20 h-screen overflow-y-auto custom-scrollbar">
+
+    <!-- TAB 1: LIVE STREAM -->
+    <div id="tab-live" class="tab-content active p-5">
+        <div class="grid grid-cols-4 gap-4 mb-4">
+            <div class="glass-card p-4 rounded-xl flex items-center justify-between">
+                <div><p class="text-xs text-on-surface-variant mb-1">Total Signals</p><p class="text-3xl font-bold text-primary" id="stat-signals">--</p></div>
+                <div class="w-11 h-11 rounded-lg bg-blue-500/10 flex items-center justify-center"><span class="material-symbols-outlined text-primary text-[26px]">graphic_eq</span></div>
+            </div>
+            <div class="glass-card p-4 rounded-xl flex items-center justify-between">
+                <div><p class="text-xs text-on-surface-variant mb-1">Total Anomalies</p><p class="text-3xl font-bold text-error" id="stat-anomalies">--</p></div>
+                <div class="w-11 h-11 rounded-lg bg-red-500/10 flex items-center justify-center"><span class="material-symbols-outlined text-error text-[26px]">error</span></div>
+            </div>
+            <div class="glass-card p-4 rounded-xl flex items-center justify-between">
+                <div><p class="text-xs text-on-surface-variant mb-1">Anomaly Rate</p><p class="text-3xl font-bold text-orange-400" id="stat-rate">--</p></div>
+                <div class="w-11 h-11 rounded-lg bg-orange-500/10 flex items-center justify-center"><span class="material-symbols-outlined text-orange-400 text-[26px]">monitoring</span></div>
+            </div>
+            <div class="glass-card p-4 rounded-xl flex items-center justify-between">
+                <div><p class="text-xs text-on-surface-variant mb-1">Active Sensors</p><p class="text-3xl font-bold text-secondary" id="stat-sensors">--</p></div>
+                <div class="w-11 h-11 rounded-lg bg-green-500/10 flex items-center justify-center"><span class="material-symbols-outlined text-secondary text-[26px]">router</span></div>
+            </div>
+        </div>
+        <div class="grid grid-cols-4 gap-3 mb-4">
+            <div class="glass-card px-4 py-2 rounded-lg flex items-center justify-between"><span class="text-xs font-semibold text-red-400">CRITICAL</span><span class="text-lg font-bold text-red-400" id="sev-critical">0</span></div>
+            <div class="glass-card px-4 py-2 rounded-lg flex items-center justify-between"><span class="text-xs font-semibold text-orange-400">HIGH</span><span class="text-lg font-bold text-orange-400" id="sev-high">0</span></div>
+            <div class="glass-card px-4 py-2 rounded-lg flex items-center justify-between"><span class="text-xs font-semibold text-yellow-400">MEDIUM</span><span class="text-lg font-bold text-yellow-400" id="sev-medium">0</span></div>
+            <div class="glass-card px-4 py-2 rounded-lg flex items-center justify-between"><span class="text-xs font-semibold text-gray-400">LOW</span><span class="text-lg font-bold text-gray-400" id="sev-low">0</span></div>
+        </div>
+        <div class="grid grid-cols-5 gap-4 mb-4" style="height:360px;">
+            <!-- Signal Chart -->
+            <div class="col-span-3 glass-card rounded-xl flex flex-col overflow-hidden">
+                <div class="px-5 py-3 border-b border-outline-variant flex justify-between items-center">
+                    <div>
+                        <h3 class="text-sm font-semibold text-on-surface">Live Signal Stream — temperature-probe-01</h3>
+                        <p class="text-[10px] text-on-surface-variant font-mono" id="active-sensor-label">--</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full live-dot" id="chart-ws-dot" style="background:#ef4444;"></span>
+                            <span class="text-[10px] text-on-surface-variant" id="chart-ws-label">Disconnected</span>
+                        </div>
+                        <button onclick="openChartExpand()" title="Expand chart" class="w-7 h-7 rounded-md flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-surface-container-high transition-colors">
+                            <span class="material-symbols-outlined text-[18px]">open_in_full</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex-1 min-h-0" id="signal-chart-container" style="padding:8px;">
+                    <svg width="100%" height="100%" id="signal-svg">
+                        <text x="50%" y="50%" text-anchor="middle" fill="#8c909f" font-size="13">Loading signal data...</text>
+                    </svg>
+                </div>
+            </div>
+            <!-- Anomaly Feed -->
+            <div class="col-span-2 glass-card rounded-xl flex flex-col overflow-hidden">
+                <div class="px-5 py-3 border-b border-outline-variant flex justify-between items-center">
+                    <h3 class="text-sm font-semibold text-on-surface">Live Anomaly Alerts</h3>
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full live-dot" id="anom-ws-dot" style="background:#ef4444;"></span>
+                        <span class="text-[10px] text-on-surface-variant" id="anom-ws-label">Disconnected</span>
+                    </div>
+                </div>
+                <div class="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-3 space-y-2" id="anomaly-feed">
+                    <p class="text-xs text-on-surface-variant text-center pt-8">Waiting for anomaly alerts...</p>
+                </div>
+            </div>
+        </div>
+        <section class="glass-card rounded-xl overflow-hidden mb-5">
+            <div class="px-5 py-3 border-b border-outline-variant flex justify-between items-center">
+                <h3 class="text-sm font-semibold text-on-surface">Anomaly History</h3>
+                <div class="flex items-center gap-3">
+                    <span class="text-xs text-on-surface-variant" id="table-count">-- records</span>
+                    <button onclick="refreshTable()" class="text-xs text-primary hover:underline flex items-center gap-1">
+                        <span class="material-symbols-outlined text-[14px]">refresh</span> Refresh
+                    </button>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-surface-container-low text-on-surface-variant border-b border-outline-variant">
+                        <tr>
+                            <th class="px-5 py-3 cursor-pointer hover:text-primary" onclick="sortTable('detected_at')">Time ↕</th>
+                            <th class="px-5 py-3 cursor-pointer hover:text-primary" onclick="sortTable('model_name')">Model ↕</th>
+                            <th class="px-5 py-3 text-center">Score</th>
+                            <th class="px-5 py-3 cursor-pointer hover:text-primary" onclick="sortTable('severity')">Severity ↕</th>
+                            <th class="px-5 py-3 text-right">Z-Score</th>
+                            <th class="px-5 py-3 text-center">Explain</th>
+                        </tr>
+                    </thead>
+                    <tbody id="anomaly-table-body" class="divide-y divide-outline-variant">
+                        <tr><td colspan="6" class="px-5 py-8 text-center text-on-surface-variant">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="px-5 py-3 border-t border-outline-variant flex justify-between items-center">
+                <button onclick="prevPage()" class="text-xs text-primary hover:underline">← Prev</button>
+                <span class="text-xs text-on-surface-variant" id="page-info">Page 1</span>
+                <button onclick="nextPage()" class="text-xs text-primary hover:underline">Next →</button>
+            </div>
+        </section>
+    </div>
+
+    <!-- TAB 2: ANOMALY LOG -->
+    <div id="tab-anomalylog" class="tab-content p-5">
+        <div class="flex justify-between items-center mb-5">
+            <div>
+                <h2 class="text-lg font-bold text-on-surface">Anomaly Log</h2>
+                <p class="text-xs text-on-surface-variant">Complete anomaly detection history across all models</p>
+            </div>
+            <button onclick="loadAnomalyLog()" class="text-xs text-primary border border-primary/30 px-3 py-1.5 rounded-lg hover:bg-primary/10 flex items-center gap-1">
+                <span class="material-symbols-outlined text-[14px]">refresh</span> Refresh
+            </button>
+        </div>
+        <div class="glass-card rounded-xl p-4 mb-4">
+            <div class="grid grid-cols-4 gap-4">
+                <div>
+                    <label class="text-[10px] text-on-surface-variant font-semibold uppercase tracking-wider block mb-1">Severity</label>
+                    <select id="log-filter-severity" class="w-full bg-surface-container-high border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface">
+                        <option value="">All Severities</option>
+                        <option value="critical">Critical</option>
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-[10px] text-on-surface-variant font-semibold uppercase tracking-wider block mb-1">Model</label>
+                    <select id="log-filter-model" class="w-full bg-surface-container-high border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface">
+                        <option value="">All Models</option>
+                        <option value="isolation_forest">Isolation Forest</option>
+                        <option value="local_outlier_factor">Local Outlier Factor</option>
+                        <option value="one_class_svm">One Class SVM</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-[10px] text-on-surface-variant font-semibold uppercase tracking-wider block mb-1">Per Page</label>
+                    <select id="log-page-size" class="w-full bg-surface-container-high border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface">
+                        <option value="20">20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+                <div class="flex items-end">
+                    <button onclick="loadAnomalyLog()" class="w-full bg-primary text-on-primary px-4 py-2 rounded-lg text-xs font-bold hover:opacity-90">Apply Filters</button>
+                </div>
+            </div>
+        </div>
+        <div class="grid grid-cols-3 gap-4 mb-4">
+            <div class="glass-card p-4 rounded-xl text-center">
+                <p class="text-[10px] text-on-surface-variant mb-1">Isolation Forest</p>
+                <p class="text-2xl font-bold text-blue-400" id="count-if">--</p>
+                <p class="text-[10px] text-on-surface-variant">detections</p>
+            </div>
+            <div class="glass-card p-4 rounded-xl text-center">
+                <p class="text-[10px] text-on-surface-variant mb-1">Local Outlier Factor</p>
+                <p class="text-2xl font-bold text-purple-400" id="count-lof">--</p>
+                <p class="text-[10px] text-on-surface-variant">detections</p>
+            </div>
+            <div class="glass-card p-4 rounded-xl text-center">
+                <p class="text-[10px] text-on-surface-variant mb-1">One Class SVM</p>
+                <p class="text-2xl font-bold text-cyan-400" id="count-svm">--</p>
+                <p class="text-[10px] text-on-surface-variant">detections</p>
+            </div>
+        </div>
+        <div class="grid grid-cols-2 gap-4 mb-4" style="height:260px;">
+            <div class="glass-card rounded-xl flex flex-col overflow-hidden">
+                <div class="px-5 py-3 border-b border-outline-variant">
+                    <h3 class="text-sm font-semibold text-on-surface">Anomalies Over Time</h3>
+                </div>
+                <div class="flex-1 min-h-0" style="padding:8px;">
+                    <svg width="100%" height="100%" id="trend-chart-svg">
+                        <text x="50%" y="50%" text-anchor="middle" fill="#8c909f" font-size="13">Loading trend data...</text>
+                    </svg>
+                </div>
+            </div>
+            <div class="glass-card rounded-xl flex flex-col overflow-hidden">
+                <div class="px-5 py-3 border-b border-outline-variant">
+                    <h3 class="text-sm font-semibold text-on-surface">Detections by Model</h3>
+                </div>
+                <div class="flex-1 min-h-0" style="padding:8px;">
+                    <svg width="100%" height="100%" id="model-compare-svg">
+                        <text x="50%" y="50%" text-anchor="middle" fill="#8c909f" font-size="13">Loading model data...</text>
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <section class="glass-card rounded-xl overflow-hidden">
+            <div class="px-5 py-3 border-b border-outline-variant flex justify-between items-center">
+                <h3 class="text-sm font-semibold text-on-surface">All Anomalies</h3>
+                <span class="text-xs text-on-surface-variant" id="log-count">-- records</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-surface-container-low text-on-surface-variant border-b border-outline-variant">
+                        <tr>
+                            <th class="px-5 py-3">Detected At</th>
+                            <th class="px-5 py-3">Model</th>
+                            <th class="px-5 py-3 text-center">Score</th>
+                            <th class="px-5 py-3">Severity</th>
+                            <th class="px-5 py-3 text-right">Z-Score</th>
+                            <th class="px-5 py-3 text-right">Value</th>
+                            <th class="px-5 py-3 text-center">Explain</th>
+                        </tr>
+                    </thead>
+                    <tbody id="log-table-body" class="divide-y divide-outline-variant">
+                        <tr><td colspan="7" class="px-5 py-8 text-center text-on-surface-variant">Click Refresh to load anomaly log</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="px-5 py-3 border-t border-outline-variant flex justify-between items-center">
+                <button onclick="logPrevPage()" class="text-xs text-primary hover:underline">← Prev</button>
+                <span class="text-xs text-on-surface-variant" id="log-page-info">Page 1</span>
+                <button onclick="logNextPage()" class="text-xs text-primary hover:underline">Next →</button>
+            </div>
+        </section>
+    </div>
+
+    <!-- TAB 3: SENSOR HEALTH -->
+    <div id="tab-sensorhealth" class="tab-content p-5">
+        <div class="flex justify-between items-center mb-5">
+            <div>
+                <h2 class="text-lg font-bold text-on-surface">Sensor Health</h2>
+                <p class="text-xs text-on-surface-variant">Status and statistics for all registered sensors</p>
+            </div>
+            <button onclick="loadSensorHealth()" class="text-xs text-primary border border-primary/30 px-3 py-1.5 rounded-lg hover:bg-primary/10 flex items-center gap-1">
+                <span class="material-symbols-outlined text-[14px]">refresh</span> Refresh
+            </button>
+        </div>
+        <div class="grid grid-cols-3 gap-4 mb-5">
+            <div class="glass-card p-4 rounded-xl flex items-center gap-4">
+                <div class="w-12 h-12 rounded-xl bg-green-500/10 flex items-center justify-center"><span class="material-symbols-outlined text-secondary text-[28px]">check_circle</span></div>
+                <div><p class="text-xs text-on-surface-variant">Active Sensors</p><p class="text-2xl font-bold text-secondary" id="health-active">--</p></div>
+            </div>
+            <div class="glass-card p-4 rounded-xl flex items-center gap-4">
+                <div class="w-12 h-12 rounded-xl bg-red-500/10 flex items-center justify-center"><span class="material-symbols-outlined text-error text-[28px]">cancel</span></div>
+                <div><p class="text-xs text-on-surface-variant">Inactive Sensors</p><p class="text-2xl font-bold text-error" id="health-inactive">--</p></div>
+            </div>
+            <div class="glass-card p-4 rounded-xl flex items-center gap-4">
+                <div class="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center"><span class="material-symbols-outlined text-primary text-[28px]">devices</span></div>
+                <div><p class="text-xs text-on-surface-variant">Total Sensors</p><p class="text-2xl font-bold text-primary" id="health-total">--</p></div>
+            </div>
+        </div>
+        <div id="sensor-cards" class="grid grid-cols-2 gap-4 mb-5">
+            <div class="glass-card p-6 rounded-xl text-center text-on-surface-variant text-sm col-span-2">Click Refresh to load sensor data</div>
+        </div>
+        <div class="glass-card rounded-xl overflow-hidden">
+            <div class="px-5 py-3 border-b border-outline-variant"><h3 class="text-sm font-semibold text-on-surface">Register New Sensor</h3></div>
+            <div class="p-5 grid grid-cols-3 gap-4">
+                <div>
+                    <label class="text-[10px] text-on-surface-variant font-semibold uppercase tracking-wider block mb-1">Sensor Name *</label>
+                    <input id="new-sensor-name" type="text" placeholder="e.g. pressure-probe-02" class="w-full bg-surface-container-high border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface focus:border-primary outline-none"/>
+                </div>
+                <div>
+                    <label class="text-[10px] text-on-surface-variant font-semibold uppercase tracking-wider block mb-1">Unit</label>
+                    <input id="new-sensor-unit" type="text" placeholder="e.g. celsius, bar, ms" class="w-full bg-surface-container-high border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface focus:border-primary outline-none"/>
+                </div>
+                <div>
+                    <label class="text-[10px] text-on-surface-variant font-semibold uppercase tracking-wider block mb-1">Description</label>
+                    <input id="new-sensor-desc" type="text" placeholder="Optional description" class="w-full bg-surface-container-high border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface focus:border-primary outline-none"/>
+                </div>
+                <div>
+                    <label class="text-[10px] text-on-surface-variant font-semibold uppercase tracking-wider block mb-1">Min Expected</label>
+                    <input id="new-sensor-min" type="number" placeholder="e.g. -50" class="w-full bg-surface-container-high border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface focus:border-primary outline-none"/>
+                </div>
+                <div>
+                    <label class="text-[10px] text-on-surface-variant font-semibold uppercase tracking-wider block mb-1">Max Expected</label>
+                    <input id="new-sensor-max" type="number" placeholder="e.g. 200" class="w-full bg-surface-container-high border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface focus:border-primary outline-none"/>
+                </div>
+                <div class="flex items-end">
+                    <button onclick="createSensor()" class="w-full bg-secondary text-on-secondary-container px-4 py-2 rounded-lg text-xs font-bold hover:opacity-90">+ Register Sensor</button>
+                </div>
+            </div>
+            <div id="sensor-form-msg" class="px-5 pb-4 text-xs hidden"></div>
+        </div>
+    </div>
+
+    <!-- TAB 4: MODEL CONFIG -->
+    <div id="tab-modelconfig" class="tab-content p-5">
+        <div class="flex justify-between items-center mb-5">
+            <div>
+                <h2 class="text-lg font-bold text-on-surface">Model Config & Alert Rules</h2>
+                <p class="text-xs text-on-surface-variant">Manage anomaly detection alert rules and notification settings</p>
+            </div>
+            <button onclick="loadAlertRules()" class="text-xs text-primary border border-primary/30 px-3 py-1.5 rounded-lg hover:bg-primary/10 flex items-center gap-1">
+                <span class="material-symbols-outlined text-[14px]">refresh</span> Refresh
+            </button>
+        </div>
+        <div class="grid grid-cols-3 gap-4 mb-5">
+            <div class="glass-card p-4 rounded-xl">
+                <div class="flex items-center gap-3 mb-3">
+                    <div class="w-9 h-9 rounded-lg bg-blue-500/20 flex items-center justify-center"><span class="material-symbols-outlined text-blue-400 text-[18px]">forest</span></div>
+                    <div><p class="text-xs font-bold text-on-surface">Isolation Forest</p><span class="text-[10px] px-1.5 py-0.5 bg-green-900 text-green-300 rounded">Active</span></div>
+                </div>
+                <p class="text-[11px] text-on-surface-variant">Random partitioning — fast on high-dimensional data. Window: 100 readings. Contamination: 10%.</p>
+            </div>
+            <div class="glass-card p-4 rounded-xl">
+                <div class="flex items-center gap-3 mb-3">
+                    <div class="w-9 h-9 rounded-lg bg-purple-500/20 flex items-center justify-center"><span class="material-symbols-outlined text-purple-400 text-[18px]">bubble_chart</span></div>
+                    <div><p class="text-xs font-bold text-on-surface">Local Outlier Factor</p><span class="text-[10px] px-1.5 py-0.5 bg-green-900 text-green-300 rounded">Active</span></div>
+                </div>
+                <p class="text-[11px] text-on-surface-variant">Density-based detection — compares local density to neighbors. Window: 100. Neighbors: 20.</p>
+            </div>
+            <div class="glass-card p-4 rounded-xl">
+                <div class="flex items-center gap-3 mb-3">
+                    <div class="w-9 h-9 rounded-lg bg-cyan-500/20 flex items-center justify-center"><span class="material-symbols-outlined text-cyan-400 text-[18px]">scatter_plot</span></div>
+                    <div><p class="text-xs font-bold text-on-surface">One-Class SVM</p><span class="text-[10px] px-1.5 py-0.5 bg-green-900 text-green-300 rounded">Active</span></div>
+                </div>
+                <p class="text-[11px] text-on-surface-variant">Kernel-based boundary — handles non-linear patterns. Window: 100. Nu: 0.1. Kernel: RBF.</p>
+            </div>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+            <div class="glass-card rounded-xl overflow-hidden">
+                <div class="px-5 py-3 border-b border-outline-variant flex justify-between items-center">
+                    <h3 class="text-sm font-semibold text-on-surface">Active Alert Rules</h3>
+                    <span class="text-xs text-on-surface-variant" id="rules-count">-- rules</span>
+                </div>
+                <div id="alert-rules-list" class="p-4 space-y-3 min-h-[200px]">
+                    <p class="text-xs text-on-surface-variant text-center pt-8">Click Refresh to load rules</p>
+                </div>
+            </div>
+            <div class="glass-card rounded-xl overflow-hidden">
+                <div class="px-5 py-3 border-b border-outline-variant"><h3 class="text-sm font-semibold text-on-surface">Create Alert Rule</h3></div>
+                <div class="p-5 space-y-4">
+                    <div>
+                        <label class="text-[10px] text-on-surface-variant font-semibold uppercase tracking-wider block mb-1">Rule Name *</label>
+                        <input id="rule-name" type="text" placeholder="e.g. critical-high-alert" class="w-full bg-surface-container-high border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface focus:border-primary outline-none"/>
+                    </div>
+                    <div>
+                        <label class="text-[10px] text-on-surface-variant font-semibold uppercase tracking-wider block mb-1">Trigger Severities</label>
+                        <div class="flex gap-2 flex-wrap">
+                            <label class="flex items-center gap-1 text-xs cursor-pointer"><input type="checkbox" id="sev-check-critical" value="critical" class="accent-red-500"> <span class="text-red-400">Critical</span></label>
+                            <label class="flex items-center gap-1 text-xs cursor-pointer"><input type="checkbox" id="sev-check-high" value="high" class="accent-orange-500"> <span class="text-orange-400">High</span></label>
+                            <label class="flex items-center gap-1 text-xs cursor-pointer"><input type="checkbox" id="sev-check-medium" value="medium" class="accent-yellow-500"> <span class="text-yellow-400">Medium</span></label>
+                            <label class="flex items-center gap-1 text-xs cursor-pointer"><input type="checkbox" id="sev-check-low" value="low" class="accent-gray-500"> <span class="text-gray-400">Low</span></label>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-[10px] text-on-surface-variant font-semibold uppercase tracking-wider block mb-1">Min Anomaly Score (0.0 – 1.0)</label>
+                        <input id="rule-min-score" type="number" min="0" max="1" step="0.05" placeholder="e.g. 0.7 (leave blank for any)" class="w-full bg-surface-container-high border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface focus:border-primary outline-none"/>
+                    </div>
+                    <div>
+                        <label class="text-[10px] text-on-surface-variant font-semibold uppercase tracking-wider block mb-1">Channel</label>
+                        <select id="rule-channel" onchange="toggleWebhookField()" class="w-full bg-surface-container-high border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface">
+                            <option value="log">Log (Terminal)</option>
+                            <option value="webhook">Webhook (HTTP POST)</option>
+                        </select>
+                    </div>
+                    <div id="webhook-url-field" class="hidden">
+                        <label class="text-[10px] text-on-surface-variant font-semibold uppercase tracking-wider block mb-1">Webhook URL</label>
+                        <input id="rule-webhook-url" type="url" placeholder="https://your-endpoint.com/alert" class="w-full bg-surface-container-high border border-outline-variant rounded-lg px-3 py-2 text-xs text-on-surface focus:border-primary outline-none"/>
+                    </div>
+                    <button onclick="createAlertRule()" class="w-full bg-primary text-on-primary px-4 py-2 rounded-lg text-xs font-bold hover:opacity-90">+ Create Alert Rule</button>
+                    <div id="rule-form-msg" class="text-xs hidden"></div>
+                </div>
+            </div>
+        </div>
+        <div class="glass-card rounded-xl overflow-hidden mt-4">
+            <div class="px-5 py-3 border-b border-outline-variant flex justify-between items-center">
+                <h3 class="text-sm font-semibold text-on-surface">Recent Alert Events</h3>
+                <button onclick="loadAlertEvents()" class="text-xs text-primary hover:underline flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">refresh</span> Load</button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-surface-container-low text-on-surface-variant border-b border-outline-variant">
+                        <tr>
+                            <th class="px-5 py-3">Fired At</th>
+                            <th class="px-5 py-3">Model</th>
+                            <th class="px-5 py-3">Severity</th>
+                            <th class="px-5 py-3 text-right">Score</th>
+                            <th class="px-5 py-3 text-center">Delivered</th>
+                        </tr>
+                    </thead>
+                    <tbody id="alert-events-body" class="divide-y divide-outline-variant">
+                        <tr><td colspan="5" class="px-5 py-6 text-center text-on-surface-variant">Click Load to see alert history</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- EXPLAINABILITY MODAL -->
+<div class="fixed inset-0 z-[100] hidden items-center justify-center p-4" id="explain-modal">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeModal()"></div>
+    <div class="relative w-full max-w-3xl glass-card rounded-2xl overflow-hidden shadow-2xl flex flex-col" style="max-height:88vh;">
+        <div class="px-7 py-5 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
+            <div>
+                <p class="text-[10px] text-on-surface-variant mb-1">Anomaly Explainability Report</p>
+                <h2 class="text-base font-semibold text-primary" id="modal-title">Loading...</h2>
+            </div>
+            <button class="w-9 h-9 rounded-full hover:bg-surface-container-high flex items-center justify-center" onclick="closeModal()">
+                <span class="material-symbols-outlined text-[20px]">close</span>
+            </button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-7 custom-scrollbar space-y-5" id="modal-content">
+            <p class="text-on-surface-variant text-sm">Loading explanation...</p>
+        </div>
+        <div class="px-7 py-4 border-t border-outline-variant flex justify-end bg-surface-container-low">
+            <button class="px-5 py-2 rounded-lg text-xs font-bold text-on-surface hover:bg-surface-container-high" onclick="closeModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- CHART EXPAND MODAL -->
+<div class="fixed inset-0 z-[100] hidden items-center justify-center p-4" id="chart-expand-modal">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" onclick="closeChartExpand()"></div>
+    <div class="relative w-full max-w-6xl glass-card rounded-2xl overflow-hidden shadow-2xl flex flex-col" style="height:82vh;">
+        <div class="px-6 py-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
+            <div>
+                <h2 class="text-base font-semibold text-primary">Signal History — temperature-probe-01</h2>
+                <p class="text-[10px] text-on-surface-variant font-mono" id="expand-sensor-label">--</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <select id="expand-range-select" onchange="loadExpandedChart()" class="bg-surface-container-high border border-outline-variant rounded-lg px-3 py-1.5 text-xs text-on-surface">
+                    <option value="100">Last 100 readings</option>
+                    <option value="250">Last 250 readings</option>
+                    <option value="500" selected>Last 500 readings</option>
+                    <option value="1000">Last 1000 readings</option>
+                </select>
+                <span class="text-[10px] text-on-surface-variant" id="expand-anomaly-count">-- anomalies</span>
+                <button class="w-9 h-9 rounded-full hover:bg-surface-container-high flex items-center justify-center" onclick="closeChartExpand()">
+                    <span class="material-symbols-outlined text-[20px]">close</span>
+                </button>
+            </div>
+        </div>
+        <div class="flex-1 min-h-0 p-4" id="expand-chart-container">
+            <svg width="100%" height="100%" id="expand-signal-svg">
+                <text x="50%" y="50%" text-anchor="middle" fill="#8c909f" font-size="13">Loading history...</text>
+            </svg>
+        </div>
+        <div class="px-6 py-3 border-t border-outline-variant text-[10px] text-on-surface-variant bg-surface-container-low">
+            Red markers indicate detected anomalies. Change range above to look further back in history.
+        </div>
+    </div>
+</div>
+
+<script>
+// ── CONFIG ─────────────────────────────────────────────────────────────────
+const API = 'http://localhost:8000/api/v1';
+const WS_BASE = 'ws://localhost:8000/api/v1';
+// Active sensor ID — auto-detected on load, falls back to first active sensor
+let SENSOR_ID = '21cb21d2-3db6-4822-9353-aa967d3e73bd';
+
+// ── STATE ──────────────────────────────────────────────────────────────────
+let signalPoints = [], anomalyIds = new Set(), anomalyFeedItems = [];
+let tableData = [], tablePage = 0, sortKey = 'detected_at', sortDir = -1;
+let logPage = 0, logData = [], logTotal = 0;
+let signalWs = null, anomalyWs = null;
+let expandPoints = [];
+
+// ── HELPERS ────────────────────────────────────────────────────────────────
+const sevColor = s => ({critical:'#ef4444',high:'#f97316',medium:'#eab308',low:'#6b7280'}[s]||'#6b7280');
+const sevBg = s => ({critical:'bg-red-600 text-white',high:'bg-orange-500 text-white',medium:'bg-yellow-500 text-black',low:'bg-gray-600 text-white'}[s]||'bg-gray-600 text-white');
+const fmtModel = m => m.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+const timeAgo = iso => { const s=Math.floor((Date.now()-new Date(iso))/1000); return s<60?s+'s ago':s<3600?Math.floor(s/60)+'m ago':Math.floor(s/3600)+'h ago'; };
+const fmtTime = iso => new Date(iso).toLocaleTimeString();
+const fmtDateTime = iso => new Date(iso).toLocaleString();
+
+// ── TAB SWITCHING ──────────────────────────────────────────────────────────
+function switchTab(tab) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    document.getElementById('nav-' + tab).classList.add('active');
+    if (tab === 'anomalylog') loadAnomalyLog();
+    if (tab === 'sensorhealth') loadSensorHealth();
+    if (tab === 'modelconfig') { loadAlertRules(); loadAlertEvents(); }
+    if (tab === 'live') setTimeout(renderChart, 150);
+}
+
+// ── STATS ──────────────────────────────────────────────────────────────────
+async function fetchStats() {
+    try {
+        const r = await fetch(`${API}/dashboard/stats`);
+        const d = await r.json();
+        document.getElementById('stat-signals').textContent = d.signals.total.toLocaleString();
+        document.getElementById('stat-anomalies').textContent = d.anomalies.total.toLocaleString();
+        document.getElementById('stat-rate').textContent = d.anomalies.rate_percent + '%';
+        document.getElementById('stat-sensors').textContent = d.signals.active_sensors;
+        const sev = d.anomalies.severity_breakdown;
+        document.getElementById('sev-critical').textContent = sev.critical||0;
+        document.getElementById('sev-high').textContent = sev.high||0;
+        document.getElementById('sev-medium').textContent = sev.medium||0;
+        document.getElementById('sev-low').textContent = sev.low||0;
+        document.getElementById('last-updated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+    } catch(e) {}
+}
+
+async function fetchHealth() {
+    try {
+        const r = await fetch(`${API}/dashboard/health/system`);
+        const d = await r.json();
+        document.getElementById('db-health').textContent = d.components.database==='healthy'?'✓':'✗';
+        document.getElementById('redis-health').textContent = d.components.redis==='healthy'?'✓':'✗';
+        document.getElementById('ws-clients').textContent = (d.websockets.live_connections||0)+(d.websockets.anomaly_connections||0);
+    } catch(e) {}
+}
+
+// ── SIGNAL CHART ───────────────────────────────────────────────────────────
+function drawSvgChart(svgId, containerId, points) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const W = container.offsetWidth || container.clientWidth;
+    const H = container.offsetHeight || container.clientHeight;
+    const svg = document.getElementById(svgId);
+    if (!svg || W < 10 || H < 10) return;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.setAttribute('width', W);
+    svg.setAttribute('height', H);
+    if (points.length < 2) {
+        svg.innerHTML = `<text x="${W/2}" y="${H/2}" text-anchor="middle" fill="#8c909f" font-size="13">${points.length===0?'Waiting for signal data...':'Collecting data...'}</text>`;
+        return;
+    }
+    // Extra bottom padding for expanded chart to ensure x-axis labels are visible
+    const isExpanded = svgId === 'expand-signal-svg';
+    const pad = {top:20, right:20, bottom: isExpanded ? 55 : 40, left:55};
+    const chartW = W-pad.left-pad.right, chartH = H-pad.top-pad.bottom;
+    const vals = points.map(p=>p.value), minV=Math.min(...vals), maxV=Math.max(...vals), range=maxV-minV||1;
+    const xS = i => pad.left+(i/(points.length-1))*chartW;
+    const yS = v => pad.top+chartH-((v-minV)/range)*chartH;
+    const pathD = points.map((p,i)=>`${i===0?'M':'L'}${xS(i).toFixed(1)},${yS(p.value).toFixed(1)}`).join(' ');
+    const areaD = `M${xS(0)},${pad.top+chartH} `+points.map((p,i)=>`L${xS(i).toFixed(1)},${yS(p.value).toFixed(1)}`).join(' ')+` L${xS(points.length-1)},${pad.top+chartH} Z`;
+    // Calculate how many labels fit without overlapping (each label ~80px wide)
+    const maxLabels = Math.max(Math.floor(chartW / 90), 2);
+    const step = Math.max(Math.floor(points.length / maxLabels), 1);
+    // For large datasets show date+time, for small ones show time only
+    const fmtLabel = ts => {
+        const d = new Date(ts);
+        return points.length > 200
+            ? d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
+            : d.toLocaleTimeString();
+    };
+    let xL = '';
+    for(let i=0;i<points.length;i+=step) xL+=`<text x="${xS(i)}" y="${pad.top+chartH+22}" text-anchor="middle" fill="#8c909f" font-size="10" font-family="JetBrains Mono">${fmtLabel(points[i].timestamp)}</text>`;
+    let yL='';
+    for(let j=0;j<=4;j++){const v=minV+(range*j/4),y=yS(v);yL+=`<text x="${pad.left-6}" y="${y+4}" text-anchor="end" fill="#8c909f" font-size="10" font-family="JetBrains Mono">${v.toFixed(1)}</text><line x1="${pad.left}" y1="${y}" x2="${pad.left+chartW}" y2="${y}" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>`;}
+    let dots='';
+    points.forEach((p,i)=>{if(p.isAnomaly){const x=xS(i),y=yS(p.value);dots+=`<circle cx="${x}" cy="${y}" r="5" fill="#ef4444" stroke="#ff6666" stroke-width="1.5" opacity="0.9"/><text x="${x}" y="${y-10}" text-anchor="middle" fill="#ef4444" font-size="9" font-weight="bold">⚠</text>`;}});
+    const gradId = svgId + '_grad';
+    svg.innerHTML=`<defs><linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#3b82f6" stop-opacity="0.3"/><stop offset="100%" stop-color="#3b82f6" stop-opacity="0.02"/></linearGradient></defs>${yL}<path d="${areaD}" fill="url(#${gradId})"/><path d="${pathD}" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linejoin="round"/>${dots}${xL}<line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${pad.top+chartH}" stroke="#424754" stroke-width="1"/><line x1="${pad.left}" y1="${pad.top+chartH}" x2="${pad.left+chartW}" y2="${pad.top+chartH}" stroke="#424754" stroke-width="1"/>`;
+}
+
+function renderChart() { drawSvgChart('signal-svg','signal-chart-container',signalPoints); }
+function renderExpandedChart() { drawSvgChart('expand-signal-svg','expand-chart-container',expandPoints); }
+
+// ── INITIAL DATA LOAD ──────────────────────────────────────────────────────
+async function loadInitialSignals() {
+    try {
+        // Auto-detect active sensor if default has no data
+        // Update UI labels
+        document.getElementById('active-sensor-label').textContent = SENSOR_ID;
+        document.getElementById('expand-sensor-label').textContent = SENSOR_ID;
+
+        const [sR,aR] = await Promise.all([
+            fetch(`${API}/signals/?sensor_id=${SENSOR_ID}&limit=60`),
+            fetch(`${API}/anomalies/?limit=200`)
+        ]);
+        const sD=await sR.json(), aD=await aR.json();
+        aD.items.forEach(a=>anomalyIds.add(a.signal_id));
+        signalPoints = sD.items.reverse().map(s=>({value:s.value,timestamp:s.timestamp,isAnomaly:anomalyIds.has(s.id)}));
+        renderChart();
+    } catch(e){ console.error('loadInitialSignals error:', e); }
+}
+
+// ── CHART EXPAND MODAL ─────────────────────────────────────────────────────
+async function openChartExpand() {
+    const modal = document.getElementById('chart-expand-modal');
+    modal.classList.remove('hidden'); modal.classList.add('flex');
+    document.body.style.overflow = 'hidden';
+    await loadExpandedChart();
+}
+
+function closeChartExpand() {
+    document.getElementById('chart-expand-modal').classList.add('hidden');
+    document.getElementById('chart-expand-modal').classList.remove('flex');
+    document.body.style.overflow = '';
+}
+
+async function loadExpandedChart() {
+    const limit = parseInt(document.getElementById('expand-range-select').value) || 500;
+    const svg = document.getElementById('expand-signal-svg');
+    svg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#8c909f" font-size="13">Loading history...</text>`;
+    try {
+        const [sR, aR] = await Promise.all([
+            fetch(`${API}/signals/?sensor_id=${SENSOR_ID}&limit=${limit}`),
+            fetch(`${API}/anomalies/?limit=${Math.max(limit*2, 500)}`)
+        ]);
+        const sD = await sR.json(), aD = await aR.json();
+        const anomIds = new Set(aD.items.map(a => a.signal_id));
+        expandPoints = sD.items.reverse().map(s=>({value:s.value,timestamp:s.timestamp,isAnomaly:anomIds.has(s.id)}));
+        const anomCount = expandPoints.filter(p=>p.isAnomaly).length;
+        document.getElementById('expand-anomaly-count').textContent = anomCount + ' anomalies in range';
+        renderExpandedChart();
+    } catch(e) {
+        svg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#ef4444" font-size="13">Failed to load history</text>`;
+    }
+}
+
+// ── WEBSOCKETS ─────────────────────────────────────────────────────────────
+function connectSignalWs() {
+    const dot = document.getElementById('chart-ws-dot');
+    const label = document.getElementById('chart-ws-label');
+    const status = document.getElementById('ws-status');
+    try {
+        signalWs = new WebSocket(`${WS_BASE}/ws/signals/sensor/${SENSOR_ID}`);
+        signalWs.onopen = () => {
+            dot.style.background = '#4ae176';
+            label.textContent = 'Connected';
+            status.textContent = '🟢 WebSocket Live';
+            status.className = 'text-xs px-2 py-1 rounded-full bg-green-900 text-green-300';
+        };
+        signalWs.onmessage = (e) => {
+            const d = JSON.parse(e.data);
+            if (d.type === 'connected') return;
+            signalPoints.push({value:d.value,timestamp:d.timestamp,isAnomaly:false});
+            if (signalPoints.length > 100) signalPoints.shift();
+            renderChart();
+        };
+        signalWs.onclose = () => {
+            dot.style.background = '#ef4444';
+            label.textContent = 'Reconnecting...';
+            status.textContent = '🔴 Disconnected';
+            status.className = 'text-xs px-2 py-1 rounded-full bg-red-900 text-red-300';
+            setTimeout(connectSignalWs, 3000);
+        };
+        signalWs.onerror = () => signalWs.close();
+    } catch(e) { setTimeout(connectSignalWs, 3000); }
+}
+
+function connectAnomalyWs() {
+    const dot = document.getElementById('anom-ws-dot');
+    const label = document.getElementById('anom-ws-label');
+    try {
+        anomalyWs = new WebSocket(`${WS_BASE}/ws/anomalies/live`);
+        anomalyWs.onopen = () => { dot.style.background='#4ae176'; label.textContent='Connected'; };
+        anomalyWs.onmessage = (e) => {
+            const d = JSON.parse(e.data);
+            if (d.type === 'connected') return;
+            anomalyIds.add(d.signal_id);
+            if (signalPoints.length > 0) signalPoints[signalPoints.length-1].isAnomaly = true;
+            renderChart();
+            addToFeed(d);
+        };
+        anomalyWs.onclose = () => { dot.style.background='#ef4444'; label.textContent='Reconnecting...'; setTimeout(connectAnomalyWs,3000); };
+        anomalyWs.onerror = () => anomalyWs.close();
+    } catch(e) { setTimeout(connectAnomalyWs, 3000); }
+}
+
+function addToFeed(data) {
+    const feed = document.getElementById('anomaly-feed');
+    const isCrit = data.severity==='critical', color=sevColor(data.severity);
+    const z = data.explanation?.z_score, zText=z!=null?`Z: ${z>0?'+':''}${z.toFixed(2)}`:'';
+    const pct = Math.round((data.anomaly_score||0)*100);
+    const card = document.createElement('div');
+    card.className = `slide-in p-3 rounded-lg border cursor-pointer ${isCrit?'critical-pulse':''}`;
+    card.style.cssText = `background:rgba(30,41,59,0.8);border-color:${color}40;`;
+    card.innerHTML = `<div class="flex justify-between items-start mb-2"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${sevBg(data.severity)}">${data.severity.toUpperCase()}</span><span class="text-[10px] text-on-surface-variant font-mono">${timeAgo(data.detected_at)}</span></div><div class="flex justify-between items-end"><div><p class="text-xs font-bold text-on-surface">${fmtModel(data.model_name)}</p><p class="text-[10px] text-on-surface-variant">Value: ${(data.value||0).toFixed(2)} ${zText}</p></div><div class="text-right"><p class="text-[10px] text-on-surface-variant mb-1">Score: ${pct}%</p><div class="w-20 h-1.5 bg-surface-container-low rounded-full"><div class="h-full rounded-full" style="width:${pct}%;background:${color};"></div></div></div></div>`;
+    const ph = feed.querySelector('p'); if(ph) ph.remove();
+    feed.insertBefore(card, feed.firstChild);
+    anomalyFeedItems.unshift(data);
+    if(anomalyFeedItems.length>20){anomalyFeedItems.pop();if(feed.children.length>20)feed.removeChild(feed.lastChild);}
+}
+
+// ── ANOMALY TABLE ──────────────────────────────────────────────────────────
+async function refreshTable() {
+    try {
+        const r = await fetch(`${API}/anomalies/?limit=20&skip=${tablePage*20}`);
+        const d = await r.json();
+        tableData = d.items;
+        document.getElementById('table-count').textContent = d.total+' records';
+        document.getElementById('page-info').textContent = `Page ${tablePage+1}`;
+        renderTable();
+    } catch(e){}
+}
+
+function renderTable() {
+    const sorted = [...tableData].sort((a,b)=>{
+        if(sortKey==='detected_at') return sortDir*(new Date(b.detected_at)-new Date(a.detected_at));
+        if(sortKey==='anomaly_score') return sortDir*(b.anomaly_score-a.anomaly_score);
+        const so={critical:0,high:1,medium:2,low:3};
+        if(sortKey==='severity') return sortDir*((so[a.severity]||4)-(so[b.severity]||4));
+        return sortDir*String(a[sortKey]).localeCompare(String(b[sortKey]));
+    });
+    const tbody = document.getElementById('anomaly-table-body');
+    if(!sorted.length){tbody.innerHTML='<tr><td colspan="6" class="px-5 py-8 text-center text-on-surface-variant text-xs">No anomalies found</td></tr>';return;}
+    tbody.innerHTML = sorted.map(a=>{
+        const color=sevColor(a.severity),pct=Math.round(a.anomaly_score*100);
+        const z=a.explanation?.z_score,zT=z!=null?`${z>0?'+':''}${z.toFixed(2)}`:'--';
+        const zC=z==null?'#8c909f':Math.abs(z)>3?'#ef4444':Math.abs(z)>2?'#f97316':'#eab308';
+        return `<tr class="hover:bg-surface-container-high cursor-pointer transition-colors text-xs" onclick="openModal('${a.id}','${a.model_name}','${a.severity}')">
+            <td class="px-5 py-3 font-mono text-on-surface-variant">${fmtTime(a.detected_at)}</td>
+            <td class="px-5 py-3 font-medium">${fmtModel(a.model_name)}</td>
+            <td class="px-5 py-3"><div class="flex items-center gap-2"><div class="flex-1 h-1.5 bg-surface-container-low rounded-full" style="min-width:60px;"><div class="h-full rounded-full" style="width:${pct}%;background:${color};"></div></div><span class="font-mono" style="color:${color};">${pct}%</span></div></td>
+            <td class="px-5 py-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${sevBg(a.severity)}">${a.severity.toUpperCase()}</span></td>
+            <td class="px-5 py-3 text-right font-mono font-bold" style="color:${zC};">${zT}</td>
+            <td class="px-5 py-3 text-center"><button class="text-[10px] text-primary border border-primary/30 px-2 py-0.5 rounded">Explain</button></td>
+        </tr>`;
+    }).join('');
+}
+
+function sortTable(k){if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=-1;}renderTable();}
+function prevPage(){if(tablePage>0){tablePage--;refreshTable();}}
+function nextPage(){tablePage++;refreshTable();}
+
+// ── ANOMALY LOG TAB ────────────────────────────────────────────────────────
+async function loadAnomalyLog() {
+    const severity=document.getElementById('log-filter-severity').value;
+    const model=document.getElementById('log-filter-model').value;
+    const size=parseInt(document.getElementById('log-page-size').value)||20;
+    const skip=logPage*size;
+    let url=`${API}/anomalies/?limit=${size}&skip=${skip}`;
+    if(severity)url+=`&severity=${severity}`;
+    if(model)url+=`&model_name=${model}`;
+    try {
+        const r=await fetch(url); const d=await r.json();
+        logData=d.items; logTotal=d.total;
+        document.getElementById('log-count').textContent=d.total+' records';
+        document.getElementById('log-page-info').textContent=`Page ${logPage+1}`;
+        renderLogTable();
+        await loadModelCounts();
+        await loadTrendChart();
+    } catch(e){}
+}
+
+async function loadModelCounts() {
+    try {
+        const [ifR,lofR,svmR]=await Promise.all([
+            fetch(`${API}/anomalies/?model_name=isolation_forest&limit=1`),
+            fetch(`${API}/anomalies/?model_name=local_outlier_factor&limit=1`),
+            fetch(`${API}/anomalies/?model_name=one_class_svm&limit=1`),
+        ]);
+        const [ifD,lofD,svmD]=await Promise.all([ifR.json(),lofR.json(),svmR.json()]);
+        document.getElementById('count-if').textContent=ifD.total||0;
+        document.getElementById('count-lof').textContent=lofD.total||0;
+        document.getElementById('count-svm').textContent=svmD.total||0;
+        renderModelCompareChart([
+            {label:'Isolation Forest',count:ifD.total||0,color:'#60a5fa'},
+            {label:'Local Outlier Factor',count:lofD.total||0,color:'#c084fc'},
+            {label:'One-Class SVM',count:svmD.total||0,color:'#22d3ee'},
+        ]);
+    } catch(e){}
+}
+
+function renderModelCompareChart(data) {
+    const svg=document.getElementById('model-compare-svg');
+    const container=svg.parentElement;
+    const W=container.clientWidth||400, H=container.clientHeight||200;
+    svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+    const maxV=Math.max(...data.map(d=>d.count),1);
+    const pad={top:20,right:20,bottom:40,left:40};
+    const chartW=W-pad.left-pad.right, chartH=H-pad.top-pad.bottom;
+    const bw=chartW/data.length*0.5, gap=chartW/data.length;
+    let bars='', labels='', yL='';
+    for(let j=0;j<=4;j++){const v=maxV*j/4,y=pad.top+chartH-(v/maxV)*chartH;yL+=`<text x="${pad.left-6}" y="${y+4}" text-anchor="end" fill="#8c909f" font-size="10">${Math.round(v)}</text><line x1="${pad.left}" y1="${y}" x2="${pad.left+chartW}" y2="${y}" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>`;}
+    data.forEach((d,i)=>{
+        const x=pad.left+i*gap+(gap-bw)/2;
+        const bh=(d.count/maxV)*chartH;
+        const y=pad.top+chartH-bh;
+        bars+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="3" fill="${d.color}"/><text x="${(x+bw/2).toFixed(1)}" y="${(y-6).toFixed(1)}" text-anchor="middle" fill="${d.color}" font-size="11" font-weight="bold">${d.count}</text>`;
+        labels+=`<text x="${(x+bw/2).toFixed(1)}" y="${H-8}" text-anchor="middle" fill="#8c909f" font-size="9">${d.label}</text>`;
+    });
+    svg.innerHTML=`${yL}${bars}${labels}<line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${pad.top+chartH}" stroke="#424754" stroke-width="1"/><line x1="${pad.left}" y1="${pad.top+chartH}" x2="${pad.left+chartW}" y2="${pad.top+chartH}" stroke="#424754" stroke-width="1"/>`;
+}
+
+async function loadTrendChart() {
+    try {
+        const r=await fetch(`${API}/anomalies/?limit=300`);
+        const d=await r.json();
+        renderTrendChart(d.items||[]);
+    } catch(e){}
+}
+
+function renderTrendChart(anomalies) {
+    const svg=document.getElementById('trend-chart-svg');
+    const container=svg.parentElement;
+    const W=container.clientWidth||400, H=container.clientHeight||200;
+    svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+    if(!anomalies.length){svg.innerHTML=`<text x="${W/2}" y="${H/2}" text-anchor="middle" fill="#8c909f" font-size="13">No anomaly data yet</text>`;return;}
+    const numBuckets=12;
+    const times=anomalies.map(a=>new Date(a.detected_at).getTime());
+    const minT=Math.min(...times), maxT=Math.max(...times);
+    const range=Math.max(maxT-minT,60000);
+    const bucketSize=range/numBuckets;
+    const buckets=Array.from({length:numBuckets},(_,i)=>({start:minT+i*bucketSize,count:0}));
+    anomalies.forEach(a=>{let idx=Math.min(Math.floor((new Date(a.detected_at).getTime()-minT)/bucketSize),numBuckets-1);if(idx<0)idx=0;buckets[idx].count++;});
+    const maxC=Math.max(...buckets.map(b=>b.count),1);
+    const pad={top:20,right:20,bottom:40,left:35};
+    const chartW=W-pad.left-pad.right, chartH=H-pad.top-pad.bottom;
+    const bw=chartW/numBuckets*0.7, gap=chartW/numBuckets;
+    let bars='', xLabels='', yL='';
+    for(let j=0;j<=4;j++){const v=maxC*j/4,y=pad.top+chartH-(v/maxC)*chartH;yL+=`<text x="${pad.left-6}" y="${y+4}" text-anchor="end" fill="#8c909f" font-size="9">${Math.round(v)}</text><line x1="${pad.left}" y1="${y}" x2="${pad.left+chartW}" y2="${y}" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>`;}
+    buckets.forEach((b,i)=>{
+        const x=pad.left+i*gap+(gap-bw)/2;
+        const bh=(b.count/maxC)*chartH;
+        bars+=`<rect x="${x.toFixed(1)}" y="${(pad.top+chartH-bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="2" fill="#f97316"/>`;
+        if(i%2===0)xLabels+=`<text x="${(x+bw/2).toFixed(1)}" y="${H-8}" text-anchor="middle" fill="#8c909f" font-size="8">${new Date(b.start).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</text>`;
+    });
+    svg.innerHTML=`${yL}${bars}${xLabels}<line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${pad.top+chartH}" stroke="#424754" stroke-width="1"/><line x1="${pad.left}" y1="${pad.top+chartH}" x2="${pad.left+chartW}" y2="${pad.top+chartH}" stroke="#424754" stroke-width="1"/>`;
+}
+
+function renderLogTable() {
+    const tbody=document.getElementById('log-table-body');
+    if(!logData.length){tbody.innerHTML='<tr><td colspan="7" class="px-5 py-8 text-center text-on-surface-variant text-xs">No anomalies found</td></tr>';return;}
+    tbody.innerHTML=logData.map(a=>{
+        const color=sevColor(a.severity),pct=Math.round(a.anomaly_score*100);
+        const z=a.explanation?.z_score,zT=z!=null?`${z>0?'+':''}${z.toFixed(2)}`:'--';
+        const zC=z==null?'#8c909f':Math.abs(z)>3?'#ef4444':Math.abs(z)>2?'#f97316':'#eab308';
+        const val=a.explanation?.value!=null?a.explanation.value.toFixed(2):'--';
+        return `<tr class="hover:bg-surface-container-high cursor-pointer transition-colors text-xs" onclick="openModal('${a.id}','${a.model_name}','${a.severity}')">
+            <td class="px-5 py-3 font-mono text-on-surface-variant">${fmtDateTime(a.detected_at)}</td>
+            <td class="px-5 py-3"><span style="color:${a.model_name.includes('isolation')?'#60a5fa':a.model_name.includes('local')?'#c084fc':'#22d3ee'}">${fmtModel(a.model_name)}</span></td>
+            <td class="px-5 py-3"><div class="flex items-center gap-2"><div class="flex-1 h-1.5 bg-surface-container-low rounded-full" style="min-width:50px;"><div class="h-full rounded-full" style="width:${pct}%;background:${color};"></div></div><span class="font-mono" style="color:${color};">${pct}%</span></div></td>
+            <td class="px-5 py-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${sevBg(a.severity)}">${a.severity.toUpperCase()}</span></td>
+            <td class="px-5 py-3 text-right font-mono font-bold" style="color:${zC};">${zT}</td>
+            <td class="px-5 py-3 text-right font-mono">${val}</td>
+            <td class="px-5 py-3 text-center"><button class="text-[10px] text-primary border border-primary/30 px-2 py-0.5 rounded">Explain</button></td>
+        </tr>`;
+    }).join('');
+}
+
+function logPrevPage(){if(logPage>0){logPage--;loadAnomalyLog();}}
+function logNextPage(){logPage++;loadAnomalyLog();}
+
+// ── SENSOR HEALTH TAB ──────────────────────────────────────────────────────
+async function loadSensorHealth() {
+    try {
+        const r=await fetch(`${API}/sensors/?limit=100`); const d=await r.json();
+        document.getElementById('health-active').textContent=d.items.filter(s=>s.is_active).length;
+        document.getElementById('health-inactive').textContent=d.items.filter(s=>!s.is_active).length;
+        document.getElementById('health-total').textContent=d.total;
+        const cards=document.getElementById('sensor-cards');
+        if(!d.items.length){cards.innerHTML='<div class="col-span-2 glass-card p-6 rounded-xl text-center text-on-surface-variant text-sm">No sensors registered yet</div>';return;}
+        const sensorCards=await Promise.all(d.items.map(async s=>{
+            let sigCount=0;
+            try{const sR=await fetch(`${API}/signals/?sensor_id=${s.id}&limit=1`);const sD=await sR.json();sigCount=sD.total||0;}catch(e){}
+            const color=s.is_active?'#4ae176':'#ef4444';
+            const statusBg=s.is_active?'bg-green-900 text-green-300':'bg-red-900 text-red-300';
+            return `<div class="glass-card p-4 rounded-xl">
+                <div class="flex justify-between items-start mb-3">
+                    <div><h4 class="text-sm font-bold text-on-surface">${s.name}</h4><p class="text-[10px] text-on-surface-variant font-mono">${s.id}</p></div>
+                    <span class="text-[10px] px-2 py-0.5 rounded font-bold ${statusBg}">${s.is_active?'ACTIVE':'INACTIVE'}</span>
+                </div>
+                <div class="grid grid-cols-3 gap-2 mb-3">
+                    <div class="bg-surface-container-high rounded-lg p-2 text-center"><p class="text-[10px] text-on-surface-variant">Unit</p><p class="text-xs font-bold text-on-surface">${s.unit||'--'}</p></div>
+                    <div class="bg-surface-container-high rounded-lg p-2 text-center"><p class="text-[10px] text-on-surface-variant">Min</p><p class="text-xs font-bold text-on-surface">${s.min_expected??'--'}</p></div>
+                    <div class="bg-surface-container-high rounded-lg p-2 text-center"><p class="text-[10px] text-on-surface-variant">Max</p><p class="text-xs font-bold text-on-surface">${s.max_expected??'--'}</p></div>
+                </div>
+                <div class="flex justify-between items-center">
+                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full" style="background:${color};"></div><span class="text-[10px] text-on-surface-variant">${sigCount.toLocaleString()} signals</span></div>
+                    <p class="text-[10px] text-on-surface-variant">${s.description||''}</p>
+                </div>
+            </div>`;
+        }));
+        cards.innerHTML=sensorCards.join('');
+    } catch(e){console.error(e);}
+}
+
+async function createSensor() {
+    const name=document.getElementById('new-sensor-name').value.trim();
+    const unit=document.getElementById('new-sensor-unit').value.trim();
+    const desc=document.getElementById('new-sensor-desc').value.trim();
+    const minV=document.getElementById('new-sensor-min').value;
+    const maxV=document.getElementById('new-sensor-max').value;
+    const msg=document.getElementById('sensor-form-msg');
+    if(!name){msg.textContent='Sensor name is required.';msg.className='px-5 pb-4 text-xs text-error block';return;}
+    try {
+        const r=await fetch(`${API}/sensors/`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,unit:unit||null,description:desc||null,min_expected:minV?parseFloat(minV):null,max_expected:maxV?parseFloat(maxV):null,is_active:true})});
+        const d=await r.json();
+        if(r.status===201){
+            msg.textContent=`✅ Sensor "${d.name}" created! ID: ${d.id}`;
+            msg.className='px-5 pb-4 text-xs text-secondary block';
+            ['new-sensor-name','new-sensor-unit','new-sensor-desc','new-sensor-min','new-sensor-max'].forEach(id=>document.getElementById(id).value='');
+            setTimeout(loadSensorHealth,500);
+        } else {
+            msg.textContent='❌ '+(d.detail||'Failed to create sensor');
+            msg.className='px-5 pb-4 text-xs text-error block';
+        }
+    } catch(e){msg.textContent='❌ Network error';msg.className='px-5 pb-4 text-xs text-error block';}
+}
+
+// ── MODEL CONFIG TAB ───────────────────────────────────────────────────────
+async function loadAlertRules() {
+    try {
+        const r=await fetch(`${API}/alerts/rules`); const d=await r.json();
+        document.getElementById('rules-count').textContent=d.total+' rules';
+        const list=document.getElementById('alert-rules-list');
+        if(!d.items.length){list.innerHTML='<p class="text-xs text-on-surface-variant text-center pt-4">No alert rules configured</p>';return;}
+        list.innerHTML=d.items.map(rule=>`
+            <div class="p-3 rounded-lg border border-outline-variant bg-surface-container-high">
+                <div class="flex justify-between items-start mb-2">
+                    <div><p class="text-xs font-bold text-on-surface">${rule.name}</p><p class="text-[10px] text-on-surface-variant">${rule.channel.toUpperCase()} channel</p></div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-[10px] px-1.5 py-0.5 rounded ${rule.is_active?'bg-green-900 text-green-300':'bg-gray-700 text-gray-400'}">${rule.is_active?'Active':'Inactive'}</span>
+                        <button onclick="deleteRule('${rule.id}')" class="text-error hover:opacity-70"><span class="material-symbols-outlined text-[14px]">delete</span></button>
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-1">
+                    ${(rule.severities||[]).map(s=>`<span class="text-[10px] px-1.5 py-0.5 rounded font-bold ${sevBg(s)}">${s.toUpperCase()}</span>`).join('')}
+                    ${rule.min_anomaly_score?`<span class="text-[10px] px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant">Score ≥ ${rule.min_anomaly_score}</span>`:''}
+                </div>
+            </div>`).join('');
+    } catch(e){}
+}
+
+async function loadAlertEvents() {
+    try {
+        const r=await fetch(`${API}/alerts/events?limit=20`); const d=await r.json();
+        const tbody=document.getElementById('alert-events-body');
+        if(!d.items.length){tbody.innerHTML='<tr><td colspan="5" class="px-5 py-6 text-center text-on-surface-variant text-xs">No alert events yet</td></tr>';return;}
+        tbody.innerHTML=d.items.map(e=>`<tr class="hover:bg-surface-container-high text-xs">
+            <td class="px-5 py-3 font-mono text-on-surface-variant">${fmtDateTime(e.fired_at)}</td>
+            <td class="px-5 py-3">${fmtModel(e.model_name)}</td>
+            <td class="px-5 py-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${sevBg(e.severity)}">${e.severity.toUpperCase()}</span></td>
+            <td class="px-5 py-3 text-right font-mono" style="color:${sevColor(e.severity)};">${Math.round(e.anomaly_score*100)}%</td>
+            <td class="px-5 py-3 text-center"><span class="text-[10px] px-1.5 py-0.5 rounded ${e.delivered?'bg-green-900 text-green-300':'bg-red-900 text-red-300'}">${e.delivered?'✓ Delivered':'✗ Failed'}</span></td>
+        </tr>`).join('');
+    } catch(e){}
+}
+
+async function createAlertRule() {
+    const name=document.getElementById('rule-name').value.trim();
+    const severities=['critical','high','medium','low'].filter(s=>document.getElementById('sev-check-'+s).checked);
+    const minScore=document.getElementById('rule-min-score').value;
+    const channel=document.getElementById('rule-channel').value;
+    const webhookUrl=document.getElementById('rule-webhook-url').value.trim();
+    const msg=document.getElementById('rule-form-msg');
+    if(!name){msg.textContent='Rule name is required.';msg.className='text-xs text-error block';return;}
+    try {
+        const body={name,channel,is_active:true};
+        if(severities.length)body.severities=severities;
+        if(minScore)body.min_anomaly_score=parseFloat(minScore);
+        if(channel==='webhook'&&webhookUrl)body.webhook_url=webhookUrl;
+        const r=await fetch(`${API}/alerts/rules`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+        const d=await r.json();
+        if(r.status===201){
+            msg.textContent=`✅ Rule "${d.name}" created!`;
+            msg.className='text-xs text-secondary block';
+            document.getElementById('rule-name').value='';
+            document.getElementById('rule-min-score').value='';
+            setTimeout(loadAlertRules,500);
+        } else {
+            msg.textContent='❌ '+(d.detail||'Failed');
+            msg.className='text-xs text-error block';
+        }
+    } catch(e){msg.textContent='❌ Network error';msg.className='text-xs text-error block';}
+}
+
+async function deleteRule(id) {
+    if(!confirm('Delete this alert rule?'))return;
+    try{await fetch(`${API}/alerts/rules/${id}`,{method:'DELETE'});loadAlertRules();}catch(e){}
+}
+
+function toggleWebhookField() {
+    document.getElementById('webhook-url-field').classList.toggle('hidden',document.getElementById('rule-channel').value!=='webhook');
+}
+
+// ── EXPLAINABILITY MODAL ───────────────────────────────────────────────────
+async function openModal(anomalyId, modelName, severity) {
+    const modal=document.getElementById('explain-modal');
+    document.getElementById('modal-title').textContent=`${fmtModel(modelName||'')} — ${(severity||'').toUpperCase()}`;
+    document.getElementById('modal-content').innerHTML='<p class="text-on-surface-variant text-sm">Loading explanation...</p>';
+    modal.classList.remove('hidden'); modal.classList.add('flex');
+    document.body.style.overflow='hidden';
+    try {
+        const r=await fetch(`${API}/explain/anomaly/${anomalyId}`); const d=await r.json();
+        const factors=(d.factors||[]).map(f=>{const pct=Math.round(f.impact*100),col=pct>70?'#ef4444':pct>40?'#f97316':'#3b82f6';return `<div><div class="flex justify-between text-xs mb-1"><span class="text-on-surface">${f.display_name}</span><span class="font-mono" style="color:${col};">${f.impact.toFixed(4)}</span></div><div class="w-full h-2 bg-surface-container-low rounded-full"><div class="h-full rounded-full" style="width:${pct}%;background:${col};"></div></div><p class="text-[10px] text-on-surface-variant mt-1">${f.description}</p></div>`;}).join('');
+        const raw=d.raw_explanation||{};
+        document.getElementById('modal-content').innerHTML=`
+            <div class="p-4 rounded-xl border border-primary/20 bg-primary/5"><p class="text-sm text-on-surface leading-relaxed">${d.plain_english||'No explanation available.'}</p></div>
+            <div><h4 class="text-xs font-bold text-on-surface-variant mb-3 uppercase tracking-wider">Contributing Factors</h4><div class="space-y-4">${factors||'<p class="text-xs text-on-surface-variant">No factors available.</p>'}</div></div>
+            <div class="p-4 rounded-xl bg-surface-container-high border border-outline-variant"><h4 class="text-xs font-bold text-secondary mb-2">Model Insight</h4><p class="text-xs text-on-surface leading-relaxed">${d.model_insight||'--'}</p></div>
+            <div class="grid grid-cols-3 gap-3">
+                <div class="p-3 rounded-lg border border-outline-variant bg-surface-container-low text-center"><p class="text-[10px] text-on-surface-variant">Window Mean</p><p class="text-base font-bold font-mono text-primary">${(raw.window_mean||0).toFixed(2)}</p></div>
+                <div class="p-3 rounded-lg border border-outline-variant bg-surface-container-low text-center"><p class="text-[10px] text-on-surface-variant">Std Deviation</p><p class="text-base font-bold font-mono text-primary">${(raw.window_std||0).toFixed(2)}</p></div>
+                <div class="p-3 rounded-lg border border-outline-variant bg-surface-container-low text-center"><p class="text-[10px] text-on-surface-variant">Z-Score</p><p class="text-base font-bold font-mono" style="color:${Math.abs(raw.z_score||0)>3?'#ef4444':'#f97316'};">${raw.z_score!=null?(raw.z_score>0?'+':'')+raw.z_score.toFixed(3):'--'}</p></div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div class="p-3 rounded-lg border border-outline-variant bg-surface-container-low text-center"><p class="text-[10px] text-on-surface-variant">Window Size</p><p class="text-base font-bold font-mono text-on-surface">${raw.window_size||'--'} readings</p></div>
+                <div class="p-3 rounded-lg border border-outline-variant bg-surface-container-low text-center"><p class="text-[10px] text-on-surface-variant">Value Range</p><p class="text-base font-bold font-mono text-on-surface">${(raw.window_min||0).toFixed(1)} – ${(raw.window_max||0).toFixed(1)}</p></div>
+            </div>`;
+    } catch(e){document.getElementById('modal-content').innerHTML=`<p class="text-error text-sm">Failed to load: ${e.message}</p>`;}
+}
+
+function closeModal() {
+    document.getElementById('explain-modal').classList.add('hidden');
+    document.getElementById('explain-modal').classList.remove('flex');
+    document.body.style.overflow='';
+}
+
+document.addEventListener('keydown', e => { if(e.key==='Escape'){closeModal();closeChartExpand();} });
+
+// ── INIT ───────────────────────────────────────────────────────────────────
+async function init() {
+    await fetchStats();
+    await fetchHealth();
+    await loadInitialSignals();
+    await refreshTable();
+    connectSignalWs();
+    connectAnomalyWs();
+    setInterval(fetchStats, 10000);
+    setInterval(fetchHealth, 15000);
+    setInterval(refreshTable, 15000);
+    setInterval(renderChart, 500);
+}
+
+document.addEventListener('visibilitychange', () => { if(!document.hidden) setTimeout(renderChart,100); });
+window.addEventListener('focus', () => setTimeout(renderChart,100));
+window.addEventListener('load', init);
+window.addEventListener('resize', () => { renderChart(); renderExpandedChart(); });
+</script>
+</body>
+</html>

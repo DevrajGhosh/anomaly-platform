@@ -9,7 +9,7 @@ import random
 import time
 
 BASE_URL = "http://localhost:8000"
-SENSOR_ID = "832eb183-a61a-425b-bca2-ec691f802b6e" # Your real sensor ID
+SENSOR_ID = "21cb21d2-3db6-4822-9353-aa967d3e73bd" # Your real sensor ID
 
 
 def send_signal(value: float, label: str = ""):
